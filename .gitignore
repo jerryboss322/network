@@ -1,0 +1,15 @@
+# Virtual Environment
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.env
+
+# Database (if you don't want to version it)
+network_monitor.db
+
+# OS files
+.DS_Store
+Thumbs.db
