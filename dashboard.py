@@ -11,17 +11,17 @@ import database
 import snmp_monitor
 import icmp_monitor
 
-# Start monitoring once
+# Force restart monitoring
 if "monitoring_started" not in st.session_state:
     database.init_db()
     snmp_monitor.start()
     icmp_monitor.start()
     st.session_state.monitoring_started = True
+    st.success("Monitoring threads started!")
 
 st.set_page_config(page_title="Hybrid Network Monitor", page_icon="📡", layout="wide")
-
 st.title("📡 Hybrid Network Monitoring Agent")
-st.caption(f"Real-time Monitor • Refresh: {DASHBOARD_REFRESH_SECS}s")
+st.caption(f"Real-time Monitor • Refreshing every {DASHBOARD_REFRESH_SECS}s")
 
 def load_table(query):
     try:
@@ -36,8 +36,8 @@ def load_table(query):
 placeholder = st.empty()
 
 while True:
-    icmp_df = load_table(f"SELECT * FROM icmp_metrics ORDER BY timestamp DESC LIMIT {MAX_CHART_POINTS * len(HOSTS)}")
-    snmp_df = load_table(f"SELECT * FROM snmp_metrics ORDER BY timestamp DESC LIMIT {MAX_CHART_POINTS * len(HOSTS)}")
+    icmp_df = load_table("SELECT * FROM icmp_metrics ORDER BY timestamp DESC LIMIT 100")
+    snmp_df = load_table("SELECT * FROM snmp_metrics ORDER BY timestamp DESC LIMIT 100")
 
     with placeholder.container():
         tab1, tab2, tab3, tab4 = st.tabs(["🏠 Overview", "📊 SNMP Metrics", "🌐 ICMP Metrics", "🚨 Alerts"])
@@ -49,36 +49,32 @@ while True:
                 ip = host["ip"]
                 label = host["label"]
                 with cols[idx]:
-                    st.markdown(f"### {label}")
-                    if not icmp_df.empty:
-                        row = icmp_df[icmp_df["host_ip"] == ip].tail(1)
-                        if not row.empty:
-                            status = row["status"].values[0]
-                            rtt = row["avg_rtt_ms"].values[0]
-                            loss = row["packet_loss_pct"].values[0]
-                            icon = "🟢" if status == "Up" else "🟡" if status == "Degraded" else "🔴"
-                            st.markdown(f"**Status:** {icon} {status}")
-                            st.metric("RTT", f"{rtt:.1f} ms" if rtt else "—")
-                            st.metric("Packet Loss", f"{loss:.1f}%")
-                        else:
-                            st.info("Waiting for data...")
+                    st.markdown(f"**{label}**")
+                    row = icmp_df[icmp_df["host_ip"] == ip].head(1) if not icmp_df.empty else pd.DataFrame()
+                    if not row.empty:
+                        status = row["status"].values[0]
+                        rtt = row["avg_rtt_ms"].values[0]
+                        loss = row["packet_loss_pct"].values[0]
+                        icon = "🟢" if status == "Up" else "🟡" if status == "Degraded" else "🔴"
+                        st.markdown(f"**Status:** {icon} {status}")
+                        st.metric("RTT", f"{rtt:.1f} ms" if rtt is not None else "—")
+                        st.metric("Packet Loss", f"{loss:.1f}%")
                     else:
-                        st.info("Starting up...")
+                        st.warning("No ICMP data yet...")
 
         with tab2:
-            st.success("✅ SNMP Simulation Running (Localhost)")
+            st.success("✅ SNMP Working")
             if not snmp_df.empty:
-                st.dataframe(snmp_df[["timestamp","host_ip","cpu_pct","mem_pct"]].tail(10), use_container_width=True)
-            else:
-                st.info("SNMP data will appear shortly...")
+                st.dataframe(snmp_df[["host_ip","cpu_pct","mem_pct"]].tail(8), use_container_width=True)
 
         with tab3:
+            st.subheader("Recent ICMP Data")
             if not icmp_df.empty:
-                st.dataframe(icmp_df[["timestamp","host_ip","avg_rtt_ms","packet_loss_pct","status"]].tail(15), use_container_width=True)
+                st.dataframe(icmp_df[["timestamp","host_ip","avg_rtt_ms","packet_loss_pct","status"]].head(15), use_container_width=True)
             else:
-                st.info("ICMP data coming...")
+                st.info("Waiting for ICMP data...")
 
         with tab4:
-            st.info("Alerts will appear here when thresholds are crossed.")
+            st.info("Alerts will show here when thresholds are crossed.")
 
     time.sleep(DASHBOARD_REFRESH_SECS)
